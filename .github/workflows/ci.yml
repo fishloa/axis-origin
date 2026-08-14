@@ -1,0 +1,205 @@
+name: axis-origin
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The pure `convert` lib + `error` module are host-testable (no `device`
+  # feature, no VDO/ACAP SDK involved). This is the fast, always-green lane.
+  host:
+    name: host (lib + convert, no device feature)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test (host, no device feature)
+        run: cargo test --locked
+      - name: Clippy (host, no device feature)
+        run: cargo clippy --locked -- -D warnings
+      - name: Fmt check
+        run: cargo fmt --all --check
+
+  # The `device` feature only builds inside the Axis ACAP Native SDK sysroot
+  # (vdo-sys needs `pkg-config vdo`, which only exists there).
+  eap:
+    name: eap (fw${{ matrix.fw }} sdk${{ matrix.sdk }} ${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    container: axisecp/acap-native-sdk:${{ matrix.sdk }}-${{ matrix.arch }}-ubuntu${{ matrix.ubuntu }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { fw: "12", sdk: "12.1.0", ubuntu: "24.04", arch: aarch64 }
+          - { fw: "12", sdk: "12.1.0", ubuntu: "24.04", arch: armv7hf }
+          - { fw: "11", sdk: "1.15.1", ubuntu: "22.04", arch: aarch64 }
+          - { fw: "11", sdk: "1.15.1", ubuntu: "22.04", arch: armv7hf }
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential curl ca-certificates pkg-config clang libclang-dev
+      - name: Install Rust (rustup, 1.86)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+            --default-toolchain 1.86.0 --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Derive Rust target triple for arch
+        id: arch_vars
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          case "$ARCH" in
+            aarch64)
+              echo "rust_target=aarch64-unknown-linux-gnu" >> "$GITHUB_OUTPUT"
+              echo "cargo_target_suffix=AARCH64_UNKNOWN_LINUX_GNU" >> "$GITHUB_OUTPUT"
+              echo "pkgconfig_suffix=aarch64_unknown_linux_gnu" >> "$GITHUB_OUTPUT"
+              ;;
+            armv7hf)
+              echo "rust_target=thumbv7neon-unknown-linux-gnueabihf" >> "$GITHUB_OUTPUT"
+              echo "cargo_target_suffix=THUMBV7NEON_UNKNOWN_LINUX_GNUEABIHF" >> "$GITHUB_OUTPUT"
+              echo "pkgconfig_suffix=thumbv7neon_unknown_linux_gnueabihf" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::unknown matrix.arch=$ARCH"
+              exit 1
+              ;;
+          esac
+      - name: Install target triple
+        run: rustup target add ${{ steps.arch_vars.outputs.rust_target }}
+
+      - name: Discover SDK sysroot + toolchain layout
+        id: discover
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          echo "== /opt/axis/acapsdk =="
+          ls -la /opt/axis/acapsdk/ 2>/dev/null || echo "(not found)"
+          echo "== /opt/axis/acapsdk/sysroots =="
+          ls -la /opt/axis/acapsdk/sysroots/ 2>/dev/null || echo "(not found)"
+          echo "== environment-setup-* scripts =="
+          ls -la /opt/axis/acapsdk/environment-setup-* 2>/dev/null || echo "(not found)"
+          echo "== searching for vdo.pc =="
+          find / -xdev -iname 'vdo.pc' 2>/dev/null | head -5 || true
+
+          SYSROOT=$(find /opt/axis/acapsdk/sysroots -mindepth 1 -maxdepth 1 -type d -iname "${ARCH}*" 2>/dev/null | head -1)
+          if [ -z "$SYSROOT" ]; then
+            echo "::error::could not locate a sysroot dir under /opt/axis/acapsdk/sysroots matching '${ARCH}*'"
+            exit 1
+          fi
+          echo "Discovered SYSROOT=$SYSROOT"
+
+          case "$ARCH" in
+            aarch64) DEFAULT_GCC_PREFIX="aarch64-linux-gnu" ;;
+            armv7hf) DEFAULT_GCC_PREFIX="arm-linux-gnueabihf" ;;
+            *) echo "::error::unknown matrix.arch=$ARCH"; exit 1 ;;
+          esac
+
+          if command -v "${DEFAULT_GCC_PREFIX}-gcc" >/dev/null 2>&1; then
+            GCC_PREFIX="$DEFAULT_GCC_PREFIX"
+          else
+            echo "expected ${DEFAULT_GCC_PREFIX}-gcc not on PATH; searching filesystem for a cross-gcc"
+            FOUND_GCC=$(find /usr/bin /usr/local/bin /opt -maxdepth 4 -type f -iname "*-gcc" 2>/dev/null | head -1)
+            if [ -z "$FOUND_GCC" ]; then
+              echo "::error::could not discover a cross-gcc for arch ${ARCH}"
+              exit 1
+            fi
+            GCC_PREFIX=$(basename "$FOUND_GCC" | sed 's/-gcc$//')
+            echo "Discovered GCC_PREFIX=$GCC_PREFIX from $FOUND_GCC"
+          fi
+
+          echo "sysroot=$SYSROOT" >> "$GITHUB_OUTPUT"
+          echo "gcc_prefix=$GCC_PREFIX" >> "$GITHUB_OUTPUT"
+
+      - name: Set cross-compile env
+        env:
+          CARGO_TARGET_SUFFIX: ${{ steps.arch_vars.outputs.cargo_target_suffix }}
+          PKGCONFIG_SUFFIX: ${{ steps.arch_vars.outputs.pkgconfig_suffix }}
+          GCC_PREFIX: ${{ steps.discover.outputs.gcc_prefix }}
+          SYSROOT: ${{ steps.discover.outputs.sysroot }}
+        run: |
+          echo "CARGO_TARGET_${CARGO_TARGET_SUFFIX}_LINKER=${GCC_PREFIX}-gcc" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_${CARGO_TARGET_SUFFIX}_RUSTFLAGS=-C link-args=--sysroot=${SYSROOT}" >> "$GITHUB_ENV"
+          echo "CC_${PKGCONFIG_SUFFIX}=${GCC_PREFIX}-gcc" >> "$GITHUB_ENV"
+          echo "CXX_${PKGCONFIG_SUFFIX}=${GCC_PREFIX}-g++" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_LIBDIR_${PKGCONFIG_SUFFIX}=${SYSROOT}/usr/lib/pkgconfig:${SYSROOT}/usr/share/pkgconfig" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH_${PKGCONFIG_SUFFIX}=${SYSROOT}/usr/lib/pkgconfig:${SYSROOT}/usr/share/pkgconfig" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_SYSROOT_DIR_${PKGCONFIG_SUFFIX}=${SYSROOT}" >> "$GITHUB_ENV"
+
+      - name: Install cargo-acap-build
+        run: |
+          cargo install --locked --git https://github.com/AxisCommunications/acap-rs \
+            --rev 8e58acb8f0617253ad21fb71ac319fea19454a38 cargo-acap-build
+
+      - name: Build .eap (device feature)
+        env:
+          ACAP_BUILD_IMPL: equivalent
+        run: cargo-acap-build --target ${{ matrix.arch }} -- -p axis-origin --features device
+
+      - name: Upload .eap
+        uses: actions/upload-artifact@v4
+        with:
+          name: axis-origin-fw${{ matrix.fw }}-${{ matrix.arch }}
+          path: target/acap/*.eap
+          if-no-files-found: error
+
+  # Attach .eap packages to the GitHub Release on tag push.
+  release:
+    name: publish .eap to the GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: eap
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download every .eap built by the matrix
+        uses: actions/download-artifact@v4
+        with:
+          pattern: axis-origin-*
+          path: artifacts
+
+      - name: Name each package by (firmware, arch) and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p eaps
+          for d in artifacts/axis-origin-*; do
+            fw="$(basename "$d" | cut -d- -f3)"
+            for f in "$d"/*.eap; do
+              base="$(basename "$f" .eap)"
+              arch="${base##*_}"
+              stem="${base%_*}"
+              cp "$f" "eaps/${stem}_${fw}_${arch}.eap"
+            done
+          done
+          cd eaps
+          ls -l
+          n=$(ls -1 *.eap | wc -l)
+          if [ "$n" -ne 4 ]; then
+            echo "::error::expected 4 .eap packages (fw11/fw12 x aarch64/armv7hf), got $n"
+            exit 1
+          fi
+          shasum -a 256 *.eap > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the Release and attach the .eap set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "axis-origin $VER"
+          fi
+          gh release upload "$GITHUB_REF_NAME" eaps/*.eap eaps/SHA256SUMS --clobber
+          echo "::notice::attached $(ls eaps/*.eap | wc -l) .eap packages to $GITHUB_REF_NAME"
