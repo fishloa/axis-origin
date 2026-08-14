@@ -4,7 +4,7 @@
 name         = "axis-origin"
 version      = "0.1.0"
 edition      = "2024"
-rust-version = "1.86"
+rust-version = "1.97"
 license      = "MIT OR Apache-2.0"
 description  = "Axis ACAP on-camera media origin: VDO capture → LL-HLS/DASH (built on multimux)"
 repository   = "https://github.com/fishloa/axis-origin"
@@ -49,8 +49,8 @@ acap-logging = { git = "https://github.com/fishloa/acap-rs", rev = "3c513f92bf3d
 # TrackSpec}`/`media_plane::trunk::RetentionClass` are the *same* types
 # `multimux::source::advance_route`/`SessionEvent` expect, not a second,
 # semver-incompatible copy.
-broadcast-common = { version = "10", optional = true }
-media-plane      = { version = "0.5", features = ["std"], optional = true }
+broadcast-common = { version = "9.3", optional = true }
+media-plane      = { version = "0.4", features = ["std"], optional = true }
 
 [features]
 default = []

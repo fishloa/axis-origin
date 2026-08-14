@@ -64,7 +64,7 @@ as artifacts — grab those, or build locally in the SDK Docker:
 docker run --rm -v "$PWD:/w" -w /w/axis-origin \
   axisecp/acap-native-sdk:12.1.0-aarch64-ubuntu24.04 bash -lc '
     apt-get update && apt-get install -y --no-install-recommends build-essential curl ca-certificates pkg-config clang libclang-dev
-    curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.86 --target aarch64-unknown-linux-gnu
+    curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.97 --target aarch64-unknown-linux-gnu
     . "$HOME/.cargo/env"
     # (set the sysroot / PKG_CONFIG / linker env per .github/workflows/axis-origin.yml)
     cargo install --locked --git https://github.com/fishloa/acap-rs --rev e9a838d cargo-acap-build
