@@ -17,6 +17,7 @@ Full docs: **https://fishloa.github.io/axis-origin/**
 - [Troubleshooting](https://fishloa.github.io/axis-origin/operator/troubleshooting.html)
 - [Security](https://fishloa.github.io/axis-origin/operator/security.html)
 - [Architecture](https://fishloa.github.io/axis-origin/contributor/architecture.html)
+- [Module Map](https://fishloa.github.io/axis-origin/contributor/module-map.html)
 - [Building](https://fishloa.github.io/axis-origin/contributor/building.html)
 - [Releasing](https://fishloa.github.io/axis-origin/contributor/releasing.html)
 - [Testing](https://fishloa.github.io/axis-origin/contributor/testing.html)

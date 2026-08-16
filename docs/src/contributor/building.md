@@ -28,7 +28,7 @@ The `device` feature pulls in the acap-rs crates and **only builds inside
 the Axis ACAP Native SDK Docker** (`vdo-sys` needs `pkg-config vdo` from the
 SDK sysroot — macOS cannot cross-compile ACAP). CI
 (`.github/workflows/ci.yml`'s `eap` job) builds all four (firmware,
-architecture) combinations on every push/PR — see
+architecture) combinations on every PR and every push to `main` — see
 [Supported Devices](../operator/supported-devices.md) for the matrix. To
 build locally in the SDK Docker:
 
@@ -53,3 +53,10 @@ brevity.
 See [Releasing](releasing.md) for how these builds become a published
 `.eap` set, and [Testing](testing.md) for what "passing" actually means for
 each build.
+
+## Building this documentation site
+
+Build the mdBook guide locally with `mdbook build docs` (output in
+`docs/book/`), or `mdbook serve docs` for a live-reloading preview while
+editing. Pushes to `main` auto-publish the guide + rustdoc API reference to
+GitHub Pages via the `docs` job in `.github/workflows/ci.yml`.

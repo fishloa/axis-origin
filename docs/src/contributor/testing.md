@@ -3,7 +3,8 @@
 ## Host tests
 
 The host-testable lib (`convert`, `admin`, `error` — see
-[Module Map](module-map.md)) is tested on every push/PR with:
+[Module Map](module-map.md)) is tested on every PR and every push to `main`
+with:
 
 ```bash
 cargo test --locked

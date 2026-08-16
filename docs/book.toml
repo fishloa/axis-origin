@@ -5,3 +5,4 @@ src = "src"
 
 [output.html]
 git-repository-url = "https://github.com/fishloa/axis-origin"
+site-url = "/axis-origin/"

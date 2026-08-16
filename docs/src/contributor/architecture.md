@@ -24,7 +24,7 @@ VDO (libvdo) --coded AU + ts--> VdoIngestSession --> transmux Sample/TrackSpec
   `multimux::source::advance_route`, serves the origin + admin on
   `127.0.0.1:2999`.
 - **`manifest.json`** — ACAP `reverseProxy` (`hls` = viewer, `admin` = admin)
-  + `settingPage` (`html/index.html`). See
+  + `settingPage` (`index.html`, served from the app's `html/` directory). See
   [Security](../operator/security.md) for what the access levels mean.
 
 See [Module Map](module-map.md) for file-by-file detail and
