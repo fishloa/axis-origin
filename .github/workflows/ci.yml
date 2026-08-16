@@ -238,7 +238,7 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
       - name: Build the mdBook guide
-        run: mdbook build docs -d ../site
+        run: mdbook build docs -d site
 
       - name: Build rustdoc (host lib only, no device feature)
         env:
